@@ -1,0 +1,12 @@
+{
+  "name": "agri-ai-auto-post",
+  "version": "1.0.0",
+  "description": "Auto post AI agriculture news to Facebook",
+  "main": "post.js",
+  "scripts": {
+    "post": "node post.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0"
+  }
+}
