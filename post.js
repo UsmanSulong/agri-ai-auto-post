@@ -5,7 +5,6 @@ const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const FB_PAGE_TOKEN = process.env.FB_PAGE_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
-// 1. ดึงข่าว
 async function fetchNews() {
   console.log("1. กำลังดึงข่าว...");
   var res = await axios.get("https://newsapi.org/v2/everything", {
@@ -24,11 +23,10 @@ async function fetchNews() {
   return res.data.articles[0];
 }
 
-// 2. สรุปข่าวด้วย Google Gemini (ฟรี)
 async function summarize(title, description) {
   console.log("2. กำลังสรุปข่าว (Gemini)...");
   var resp = await axios.post(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_API_KEY,
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=" + GEMINI_API_KEY,
     {
       contents: [
         {
@@ -46,9 +44,8 @@ async function summarize(title, description) {
   return caption;
 }
 
-// 3. สร้างภาพด้วย Pollinations.ai (ฟรี ไม่ต้องมี API key)
 function generateImageUrl(caption) {
-  console.log("3. กำลังสร้างภาพ (Pollinations.ai)...");
+  console.log("3. กำลังสร้าง URL ภาพ (Pollinations.ai)...");
   var prompt = "bright colorful modern infographic about AI and smart farming technology, clean professional style, Thai agriculture theme, " + caption;
   var encoded = encodeURIComponent(prompt);
   var url = "https://image.pollinations.ai/prompt/" + encoded + "?width=1024&height=1024&nologo=true";
@@ -56,7 +53,6 @@ function generateImageUrl(caption) {
   return url;
 }
 
-// 4. โพสต์ลง Facebook
 async function postToFacebook(caption, imageUrl, sourceUrl) {
   console.log("4. กำลังโพสต์ลง Facebook...");
   var message = caption + "\n\nอ่านเพิ่มเติม: " + sourceUrl + "\n\n#AI #เกษตร #SmartFarming #เทคโนโลยีเกษตร";
@@ -72,7 +68,6 @@ async function postToFacebook(caption, imageUrl, sourceUrl) {
   return resp.data;
 }
 
-// รันทั้งหมด
 async function main() {
   try {
     console.log("=== เริ่มระบบโพสต์อัตโนมัติ ===");
