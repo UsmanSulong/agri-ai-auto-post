@@ -5,57 +5,87 @@ const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const FB_PAGE_TOKEN = process.env.FB_PAGE_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
+// 1. ดึงข่าว (สุ่มจาก 5 ข่าวล่าสุด เพื่อไม่ซ้ำกันในแต่ละรอบ)
 async function fetchNews() {
   console.log("1. กำลังดึงข่าว...");
   var res = await axios.get("https://newsapi.org/v2/everything", {
     params: {
-      q: "agriculture AND technology",
+      q: "(agriculture OR farming OR smart farm) AND (technology OR AI OR IoT OR IT)",
       language: "en",
       sortBy: "publishedAt",
-      pageSize: 1,
+      pageSize: 5,
       apiKey: NEWSAPI_KEY,
     },
   });
   if (!res.data.articles || !res.data.articles.length) {
     throw new Error("No news found");
   }
-  console.log("   ข่าว:", res.data.articles[0].title);
-  return res.data.articles[0];
+  // สุ่มเลือก 1 ข่าวจาก 5 ข่าวล่าสุด
+  var index = Math.floor(Math.random() * Math.min(5, res.data.articles.length));
+  var article = res.data.articles[index];
+  console.log("   ข่าว:", article.title);
+  return article;
 }
 
-async function summarize(title, description) {
-  console.log("2. กำลังสรุปข่าว (Gemini)...");
+// 2. เขียนบทความข่าว 2 ย่อหน้า ด้วย Gemini
+async function writeArticle(title, description) {
+  console.log("2. กำลังเขียนบทความข่าว (Gemini)...");
+  var prompt = "คุณเป็นนักข่าวสายเทคโนโลยีการเกษตรของไทย เขียนบทความข่าวภาษาไทยจากข่าวต่อไปนี้\n\n";
+  prompt += "กฎ:\n";
+  prompt += "1. เขียนเป็น 2 ย่อหน้า\n";
+  prompt += "2. ย่อหน้าแรก: สรุปใจความสำคัญของข่าว เขียนแบบหนังสือพิมพ์ไทย กระชับ ชัดเจน\n";
+  prompt += "3. ย่อหน้าที่สอง: วิเคราะห์ผลกระทบต่อเกษตรกรไทยหรือวงการไอที+เกษตร\n";
+  prompt += "4. ใส่ emoji ที่เหมาะสม 2-3 ตัว\n";
+  prompt += "5. ความยาวรวมไม่เกิน 100 คำ\n";
+  prompt += "6. ห้ามใส่หัวข้อหรือชื่อเรื่อง เขียนเนื้อหาเลย\n\n";
+  prompt += "Title: " + title + "\n";
+  prompt += "Description: " + (description || "");
+
   var resp = await axios.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
     {
-      contents: [
-        {
-          parts: [
-            {
-              text: "สรุปข่าวนี้เป็นภาษาไทย สั้นๆ ไม่เกิน 20 คำ เหมาะสำหรับโพสต์ Facebook พร้อมใส่ emoji ที่เกี่ยวข้อง\nTitle: " + title + "\nDescription: " + (description || ""),
-            },
-          ],
-        },
-      ],
+      contents: [{ parts: [{ text: prompt }] }],
     }
   );
-  var caption = resp.data.candidates[0].content.parts[0].text.trim();
-  console.log("   แคปชั่น:", caption);
-  return caption;
+  var article = resp.data.candidates[0].content.parts[0].text.trim();
+  console.log("   บทความ:", article.substring(0, 80) + "...");
+  return article;
 }
 
-function generateImageUrl(caption) {
-  console.log("3. กำลังสร้าง URL ภาพ (Pollinations.ai)...");
-  var prompt = "bright colorful modern infographic about AI and smart farming technology, clean professional style, Thai agriculture theme, " + caption;
+// 3. สร้างหัวข้อข่าวภาษาไทย (สำหรับใส่ในภาพ)
+async function createHeadline(title) {
+  console.log("3. กำลังสร้างหัวข้อข่าวภาษาไทย...");
+  var prompt = "แปลหัวข้อข่าวนี้เป็นภาษาไทย สั้นๆ กระชับ ไม่เกิน 12 คำ เหมาะสำหรับพาดหัวหนังสือพิมพ์ ห้ามใส่เครื่องหมายคำพูด\nTitle: " + title;
+
+  var resp = await axios.post(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
+    {
+      contents: [{ parts: [{ text: prompt }] }],
+    }
+  );
+  var headline = resp.data.candidates[0].content.parts[0].text.trim();
+  console.log("   หัวข้อ:", headline);
+  return headline;
+}
+
+// 4. สร้างภาพแบบหนังสือพิมพ์ไทย (Pollinations.ai)
+function generateImageUrl(headline) {
+  console.log("4. กำลังสร้างภาพแบบหนังสือพิมพ์...");
+  var prompt = "Thai newspaper front page layout, headline news about agriculture technology and AI, professional newspaper design with Thai text, clean typography, newspaper column layout, realistic newspaper photo of smart farming, drone spraying rice field, sensor in farm, modern agriculture, photorealistic style, high quality press photo, newspaper masthead design";
   var encoded = encodeURIComponent(prompt);
-  var url = "https://image.pollinations.ai/prompt/" + encoded + "?width=1024&height=1024&nologo=true";
+  var url = "https://image.pollinations.ai/prompt/" + encoded + "?width=1024&height=1024&nologo=true&seed=" + Date.now();
   console.log("   ภาพ URL พร้อมแล้ว");
   return url;
 }
 
-async function postToFacebook(caption, imageUrl, sourceUrl) {
-  console.log("4. กำลังโพสต์ลง Facebook...");
-  var message = caption + "\n\nอ่านเพิ่มเติม: " + sourceUrl + "\n\n#AI #เกษตร #SmartFarming #เทคโนโลยีเกษตร";
+// 5. โพสต์ลง Facebook
+async function postToFacebook(article, headline, imageUrl, sourceUrl) {
+  console.log("5. กำลังโพสต์ลง Facebook...");
+  var message = "📰 " + headline + "\n\n";
+  message += article + "\n\n";
+  message += "🔗 อ่านข่าวต้นฉบับ: " + sourceUrl + "\n\n";
+  message += "#ไอทีชาวสวน #AI #เกษตร #SmartFarming #เทคโนโลยีเกษตร #IoT #ข่าวเกษตร #นวัตกรรมเกษตร";
+
   var resp = await axios.post(
     "https://graph.facebook.com/v19.0/" + FB_PAGE_ID + "/photos",
     {
@@ -68,16 +98,19 @@ async function postToFacebook(caption, imageUrl, sourceUrl) {
   return resp.data;
 }
 
+// รันทั้งหมด
 async function main() {
   try {
+    var now = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
     console.log("=== เริ่มระบบโพสต์อัตโนมัติ ===");
-    console.log("เวลา:", new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }));
+    console.log("เวลา:", now);
     console.log("");
 
     var news = await fetchNews();
-    var caption = await summarize(news.title, news.description);
-    var imageUrl = generateImageUrl(caption);
-    await postToFacebook(caption, imageUrl, news.url);
+    var article = await writeArticle(news.title, news.description);
+    var headline = await createHeadline(news.title);
+    var imageUrl = generateImageUrl(headline);
+    await postToFacebook(article, headline, imageUrl, news.url);
 
     console.log("");
     console.log("=== สำเร็จทั้งหมด! ===");
