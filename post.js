@@ -26,7 +26,7 @@ async function fetchNews() {
 async function summarize(title, description) {
   console.log("2. กำลังสรุปข่าว (Gemini)...");
   var resp = await axios.post(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
     {
       contents: [
         {
