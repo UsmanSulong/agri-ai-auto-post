@@ -2,7 +2,8 @@ name: Auto Post AI Agriculture News
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 1 * * *'
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 jobs:
