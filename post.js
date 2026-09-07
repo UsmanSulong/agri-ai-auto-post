@@ -5,6 +5,29 @@ const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const FB_PAGE_TOKEN = process.env.FB_PAGE_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
+// ฟังก์ชัน retry สำหรับ Gemini (ลองใหม่ 3 ครั้ง)
+async function callGemini(prompt) {
+  var maxRetries = 3;
+  for (var i = 0; i < maxRetries; i++) {
+    try {
+      var resp = await axios.post(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
+        { contents: [{ parts: [{ text: prompt }] }] },
+        { timeout: 30000 }
+      );
+      return resp.data.candidates[0].content.parts[0].text.trim();
+    } catch (err) {
+      var status = err.response ? err.response.status : 0;
+      console.log("   Gemini error (ครั้งที่ " + (i + 1) + "): " + status + " - รอ 10 วินาที...");
+      if (i < maxRetries - 1) {
+        await new Promise(function(r) { setTimeout(r, 10000); });
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function fetchNews() {
   console.log("1. กำลังดึงข่าว...");
   var res = await axios.get("https://newsapi.org/v2/everything", {
@@ -26,22 +49,13 @@ async function fetchNews() {
 }
 
 async function writeArticle(title, description) {
-  console.log("2. กำลังเขียนบทความข่าว (Gemini)...");
+  console.log("2. กำลังเขียนบทความข่าว...");
   var prompt = "คุณเป็นนักข่าวสายเทคโนโลยีการเกษตรของไทย เขียนบทความข่าวภาษาไทย\n\n";
-  prompt += "กฎ:\n";
-  prompt += "1. เขียน 2 ย่อหน้า\n";
-  prompt += "2. ย่อหน้าแรก: สรุปใจความสำคัญ แบบหนังสือพิมพ์ไทย กระชับ ชัดเจน\n";
-  prompt += "3. ย่อหน้าที่สอง: วิเคราะห์ผลกระทบต่อเกษตรกรไทยหรือวงการไอที+เกษตร\n";
-  prompt += "4. ใส่ emoji 2-3 ตัว\n";
-  prompt += "5. ความยาวรวมไม่เกิน 100 คำ\n";
-  prompt += "6. ห้ามใส่หัวข้อ เขียนเนื้อหาเลย\n\n";
+  prompt += "กฎ:\n1. เขียน 2 ย่อหน้า\n2. ย่อหน้าแรก: สรุปใจความสำคัญ แบบหนังสือพิมพ์ไทย\n";
+  prompt += "3. ย่อหน้าที่สอง: วิเคราะห์ผลกระทบต่อเกษตรกรไทย\n4. ใส่ emoji 2-3 ตัว\n";
+  prompt += "5. ความยาวรวมไม่เกิน 100 คำ\n6. ห้ามใส่หัวข้อ เขียนเนื้อหาเลย\n\n";
   prompt += "Title: " + title + "\nDescription: " + (description || "");
-
-  var resp = await axios.post(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
-    { contents: [{ parts: [{ text: prompt }] }] }
-  );
-  var article = resp.data.candidates[0].content.parts[0].text.trim();
+  var article = await callGemini(prompt);
   console.log("   บทความ:", article.substring(0, 80) + "...");
   return article;
 }
@@ -49,11 +63,7 @@ async function writeArticle(title, description) {
 async function createHeadline(title) {
   console.log("3. กำลังสร้างหัวข้อข่าว...");
   var prompt = "แปลหัวข้อข่าวนี้เป็นภาษาไทย สั้นกระชับ ไม่เกิน 10 คำ แบบพาดหัวหนังสือพิมพ์ ตอบเฉพาะหัวข้อ ห้ามใส่เครื่องหมายคำพูด\nTitle: " + title;
-  var resp = await axios.post(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + GEMINI_API_KEY,
-    { contents: [{ parts: [{ text: prompt }] }] }
-  );
-  var headline = resp.data.candidates[0].content.parts[0].text.trim();
+  var headline = await callGemini(prompt);
   console.log("   หัวข้อ:", headline);
   return headline;
 }
@@ -63,11 +73,9 @@ async function generateAndWaitImage() {
   var seed = Math.floor(Math.random() * 999999);
   var prompt = "smart farming drone rice field sensor Thailand newspaper photo";
   var url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) + "?width=1024&height=1024&nologo=true&seed=" + seed;
-
-  // รอให้ภาพสร้างเสร็จ
   console.log("   รอภาพสร้างเสร็จ...");
   var resp = await axios.get(url, { responseType: "arraybuffer", timeout: 60000 });
-  console.log("   ภาพสร้างเสร็จแล้ว ขนาด:", resp.data.length, "bytes");
+  console.log("   ภาพสร้างเสร็จ ขนาด:", resp.data.length, "bytes");
   return url;
 }
 
@@ -77,14 +85,9 @@ async function postToFacebook(article, headline, imageUrl, sourceUrl) {
   message += article + "\n\n";
   message += "🔗 อ่านข่าวต้นฉบับ: " + sourceUrl + "\n\n";
   message += "#ไอทีชาวสวน #AI #เกษตร #SmartFarming #เทคโนโลยีเกษตร #IoT #ข่าวเกษตร";
-
   var resp = await axios.post(
     "https://graph.facebook.com/v19.0/" + FB_PAGE_ID + "/photos",
-    {
-      url: imageUrl,
-      caption: message,
-      access_token: FB_PAGE_TOKEN,
-    }
+    { url: imageUrl, caption: message, access_token: FB_PAGE_TOKEN }
   );
   console.log("   โพสต์สำเร็จ! Post ID:", resp.data.id || resp.data.post_id);
   return resp.data;
@@ -95,13 +98,11 @@ async function main() {
     console.log("=== เริ่มระบบโพสต์อัตโนมัติ ===");
     console.log("เวลา:", new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }));
     console.log("");
-
     var news = await fetchNews();
     var article = await writeArticle(news.title, news.description);
     var headline = await createHeadline(news.title);
     var imageUrl = await generateAndWaitImage();
     await postToFacebook(article, headline, imageUrl, news.url);
-
     console.log("");
     console.log("=== สำเร็จทั้งหมด! ===");
   } catch (err) {
